@@ -1,0 +1,6 @@
+{
+  "name": "Кешбэк Трекер",
+  "description": "Приложение для удобного внесения, сравнения и поиска максимальных процентов кешбэка по различным банкам (Т-Банк, Альфа-Банк, Ozon Банк, СберБанк и другие) по категориям трат.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
