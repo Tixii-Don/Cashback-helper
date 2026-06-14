@@ -20,8 +20,11 @@ class MainActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
 
-    // Automatically schedule monthly reminder alarms on startup
-    com.example.notification.CashbackNotificationReceiver.scheduleMonthlyAlarm(this)
+    // Schedule monthly reminder alarms on startup only if notifications were enabled by user
+    val prefs = getSharedPreferences("cashback_prefs", android.content.Context.MODE_PRIVATE)
+    if (prefs.getBoolean("notifications_enabled", false)) {
+        com.example.notification.CashbackNotificationReceiver.scheduleMonthlyAlarm(this)
+    }
 
     setContent {
       MyApplicationTheme {

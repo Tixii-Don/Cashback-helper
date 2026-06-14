@@ -74,6 +74,20 @@ class CashbackViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun updateCashback(cashbackId: Long, bankId: Long, category: String, percentage: Double, iconName: String) {
+        viewModelScope.launch {
+            repository.updateCashback(
+                Cashback(
+                    id = cashbackId,
+                    bankId = bankId,
+                    category = category,
+                    percentage = percentage,
+                    iconName = iconName
+                )
+            )
+        }
+    }
+
     fun removeCashback(cashbackId: Long) {
         viewModelScope.launch {
             repository.deleteCashback(cashbackId)

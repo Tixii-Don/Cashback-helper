@@ -15,13 +15,20 @@ import java.util.Calendar
 class CashbackNotificationReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
+        val prefs = context.getSharedPreferences("cashback_prefs", Context.MODE_PRIVATE)
+        val isEnabled = prefs.getBoolean("notifications_enabled", false)
+
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-            scheduleMonthlyAlarm(context)
+            if (isEnabled) {
+                scheduleMonthlyAlarm(context)
+            }
             return
         }
 
-        showNotification(context)
-        scheduleMonthlyAlarm(context)
+        if (isEnabled) {
+            showNotification(context)
+            scheduleMonthlyAlarm(context)
+        }
     }
 
     private fun showNotification(context: Context) {
@@ -90,6 +97,18 @@ class CashbackNotificationReceiver : BroadcastReceiver() {
                 calendar.timeInMillis,
                 pendingIntent
             )
+        }
+
+        fun cancelMonthlyAlarm(context: Context) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val intent = Intent(context, CashbackNotificationReceiver::class.java)
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                0,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            alarmManager.cancel(pendingIntent)
         }
 
         fun sendImmediateTestNotification(context: Context) {
