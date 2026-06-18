@@ -44,8 +44,15 @@ class CashbackViewModel(application: Application) : AndroidViewModel(application
         CategoryPreset("Электроника", "devices"),
         CategoryPreset("Топливо и АЗС", "local_gas_station"),
         CategoryPreset("Развлечения", "theater_comedy"),
+        CategoryPreset("Кино и искусство", "movie"),
         CategoryPreset("Красота и Спа", "spa"),
         CategoryPreset("Дом и Ремонт", "construction"),
+        CategoryPreset("Книги и хобби", "menu_book"),
+        CategoryPreset("Спорттовары", "sports_soccer"),
+        CategoryPreset("Зоотовары", "pets"),
+        CategoryPreset("Цветы и подарки", "redeem"),
+        CategoryPreset("Путешествия", "flight"),
+        CategoryPreset("Игры и софт", "videogame_asset"),
         CategoryPreset("Все покупки", "percent")
     )
 

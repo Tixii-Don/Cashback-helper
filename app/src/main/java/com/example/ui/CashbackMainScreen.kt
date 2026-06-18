@@ -42,6 +42,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import com.example.data.Bank
 import com.example.data.CashbackWithBank
 import kotlinx.coroutines.delay
@@ -62,9 +68,16 @@ fun getEmojiForCategory(category: String, presetIcon: String = ""): String {
         norm.contains("одежд") || norm.contains("обувь") || norm.contains("плать") || presetIcon == "checkroom" -> "👕"
         norm.contains("электроник") || norm.contains("техник") || norm.contains("телефон") || presetIcon == "devices" -> "💻"
         norm.contains("топлив") || norm.contains("бензин") || norm.contains("азс") || presetIcon == "local_gas_station" -> "⛽️"
-        norm.contains("развлечен") || norm.contains("кино") || norm.contains("театр") || norm.contains("билет") || presetIcon == "theater_comedy" -> "🎟"
+        norm.contains("развлечен") || norm.contains("театр") || norm.contains("билет") || presetIcon == "theater_comedy" -> "🎟"
+        norm.contains("кино") || norm.contains("музе") || norm.contains("искусств") || presetIcon == "movie" -> "🎬"
         norm.contains("красот") || norm.contains("салон") || norm.contains("спа") || norm.contains("косметик") || presetIcon == "spa" -> "💅"
         norm.contains("дом") || norm.contains("ремонт") || norm.contains("мебель") || presetIcon == "construction" -> "🔨"
+        norm.contains("книг") || norm.contains("хобби") || presetIcon == "menu_book" -> "📚"
+        norm.contains("авиа") || norm.contains("билет") || norm.contains("путешеств") || presetIcon == "flight" -> "✈️"
+        norm.contains("спорт") || norm.contains("фитне") || presetIcon == "sports_soccer" -> "⚽️"
+        norm.contains("зоо") || norm.contains("животн") || norm.contains("корм") || presetIcon == "pets" -> "🐾"
+        norm.contains("игры") || norm.contains("игр") || norm.contains("гейм") || presetIcon == "videogame_asset" -> "🎮"
+        norm.contains("цветы") || norm.contains("подар") || norm.contains("сувенир") || presetIcon == "redeem" -> "🎁"
         norm.contains("все покупки") || norm.contains("любые") || presetIcon == "percent" -> "💳"
         else -> "💰"
     }
@@ -92,6 +105,7 @@ fun CashbackMainScreen(
     val selectedBankFilter by viewModel.selectedBankFilter.collectAsStateWithLifecycle()
 
     var activeTab by remember { mutableStateOf("best_deals") } // "best_deals" or "my_cards"
+    var swipeOffsetX by remember { mutableFloatStateOf(0f) }
     var showAddBankDialog by remember { mutableStateOf(false) }
     var showAddCashbackDialog by remember { mutableStateOf(false) }
     var preselectedBankId by remember { mutableStateOf<Long?>(null) }
@@ -102,6 +116,19 @@ fun CashbackMainScreen(
     var tutorialStep by remember { mutableIntStateOf(prefs.getInt("tutorial_step_key", 1)) }
     
     val focusManager = LocalFocusManager.current
+
+    // Back button handler to close any active overlay dialog instead of closing the app
+    if (showAddBankDialog || showAddCashbackDialog) {
+        BackHandler {
+            if (showAddBankDialog) {
+                showAddBankDialog = false
+            }
+            if (showAddCashbackDialog) {
+                showAddCashbackDialog = false
+                editingCashback = null
+            }
+        }
+    }
 
     // Pulsing scale for highlighting the FAB during the second step of onboarding
     val infiniteTransition = rememberInfiniteTransition(label = "onboarding_pulse")
@@ -121,6 +148,13 @@ fun CashbackMainScreen(
             // Hide FAB when overlays are shown to prevent overlapping "Save"/"Create" buttons!
             if (!showAddBankDialog && !showAddCashbackDialog) {
                 if (activeTab == "my_cards" && banks.isNotEmpty() || (activeTab == "best_deals" && banks.isNotEmpty())) {
+                    val fabHighlight = banks.isNotEmpty() && cashbacks.isEmpty() && tutorialStep > 0
+                    val fabBorderModifier = if (fabHighlight) {
+                        Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp))
+                    } else {
+                        Modifier
+                    }
+
                     ExtendedFloatingActionButton(
                         text = { Text("Внести кешбэк", fontWeight = FontWeight.Bold, color = Color.White) },
                         icon = { Icon(Icons.Default.Add, contentDescription = "Add", tint = Color.White) },
@@ -133,6 +167,7 @@ fun CashbackMainScreen(
                             .testTag("add_cashback_fab")
                             .padding(bottom = 16.dp)
                             .scale(fabScale)
+                            .then(fabBorderModifier)
                     )
                 }
             }
@@ -219,11 +254,28 @@ fun CashbackMainScreen(
                     val activeTextColor = MaterialTheme.colorScheme.primary
 
                     // Best Deals tab
+                    val findProfitableHighlight = banks.isNotEmpty() && cashbacks.isNotEmpty() && activeTab == "my_cards" && tutorialStep > 0
+                    val bestDealsBorderModifier = if (findProfitableHighlight) {
+                        Modifier
+                            .scale(fabScale)
+                            .border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                    } else {
+                        Modifier
+                    }
+
                     Box(
                         modifier = tabModifier
+                            .then(bestDealsBorderModifier)
                             .testTag("tab_best_deals")
                             .background(if (activeTab == "best_deals") activeTabColor else Color.Transparent)
-                            .clickable { activeTab = "best_deals" },
+                            .clickable { 
+                                activeTab = "best_deals"
+                                if (banks.isNotEmpty() && cashbacks.isNotEmpty() && tutorialStep > 0) {
+                                    tutorialStep = 0
+                                    prefs.edit().putInt("tutorial_step_key", 0).apply()
+                                    Toast.makeText(context, "Обучение завершено! 🎉 Удачи в поиске максимального кешбэка!", Toast.LENGTH_LONG).show()
+                                }
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -248,7 +300,7 @@ fun CashbackMainScreen(
                     val myCardsBorderModifier = if (myCardsHighlight) {
                         Modifier
                             .scale(fabScale)
-                            .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                            .border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
                     } else {
                         Modifier
                     }
@@ -285,9 +337,46 @@ fun CashbackMainScreen(
                 AnimatedContent(
                     targetState = activeTab,
                     transitionSpec = {
-                        fadeIn(animationSpec = spring()) togetherWith fadeOut(animationSpec = spring())
+                        if (targetState == "my_cards") {
+                            (slideInHorizontally { width -> width / 2 } + fadeIn(animationSpec = tween(200)))
+                                .togetherWith(slideOutHorizontally { width -> -width / 2 } + fadeOut(animationSpec = tween(200)))
+                        } else {
+                            (slideInHorizontally { width -> -width / 2 } + fadeIn(animationSpec = tween(200)))
+                                .togetherWith(slideOutHorizontally { width -> width / 2 } + fadeOut(animationSpec = tween(200)))
+                        }
                     },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .pointerInput(activeTab) {
+                            detectHorizontalDragGestures(
+                                onDragEnd = {
+                                    if (swipeOffsetX < -120f) {
+                                        // Swipe Left (drag finger left) -> Switch to right tab: "my_cards"
+                                        if (activeTab == "best_deals") {
+                                            activeTab = "my_cards"
+                                        }
+                                    } else if (swipeOffsetX > 120f) {
+                                        // Swipe Right (drag finger right) -> Switch to left tab: "best_deals"
+                                        if (activeTab == "my_cards") {
+                                            activeTab = "best_deals"
+                                            if (banks.isNotEmpty() && cashbacks.isNotEmpty() && tutorialStep > 0) {
+                                                tutorialStep = 0
+                                                prefs.edit().putInt("tutorial_step_key", 0).apply()
+                                                Toast.makeText(context, "Обучение завершено! 🎉 Удачи в поиске максимального кешбэка!", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }
+                                    swipeOffsetX = 0f
+                                },
+                                onHorizontalDrag = { change, dragAmount ->
+                                    change.consume()
+                                    swipeOffsetX += dragAmount
+                                },
+                                onDragCancel = {
+                                    swipeOffsetX = 0f
+                                }
+                            )
+                        },
                     label = "tab_transition"
                 ) { targetTab ->
                     when (targetTab) {
@@ -912,9 +1001,10 @@ fun MyCardsTabContent(
                         .testTag("add_bank_button"),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                     shape = RoundedCornerShape(10.dp),
+                    border = if (isTutorialHighlight) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        containerColor = if (isTutorialHighlight) Color(0xFF2E7D32) else MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = if (isTutorialHighlight) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
                     )
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
@@ -1333,18 +1423,22 @@ fun AddBankOverlay(
 
     val bankColorsList = listOf(
         "#FFDD2D" to "Т-Банк",
-        "#EF3124" to "Альфа",
-        "#005BFF" to "Ozon",
-        "#21A038" to "Сбер",
-        "#FCD91F" to "Яндекс",
+        "#EF3124" to "Альфа-Банк",
+        "#005BFF" to "Ozon Банк",
+        "#21A038" to "СберБанк",
+        "#FCD91F" to "Яндекс Банк",
         "#0E58A4" to "ВТБ",
+        "#FFE000" to "Райффазен",
+        "#1062AC" to "Газпромбанк",
+        "#FF4F12" to "Совкомбанк",
+        "#E1251B" to "МТС Банк",
         "#8B5CF6" to "Пурпур",
         "#EC4899" to "Розовый",
         "#FF5722" to "Оранж",
         "#111827" to "Графит"
     )
 
-    val bankEmojisList = listOf("🟡", "🔴", "🔵", "🟢", "⭐️", "💎", "💳", "🏦", "🟣", "⚫️", "✅", "🔥")
+    val bankEmojisList = listOf("🟡", "🔴", "🔵", "🟢", "⭐️", "💎", "💳", "🏦", "🌾", "Ⓜ️", "🟠", "🥚", "🟣", "⚫️", "✅", "🔥")
 
     val popularPresetBanks = listOf(
         PopularBankPreset("Т-Банк", "#FFDD2D", "🟡"),
@@ -1353,11 +1447,22 @@ fun AddBankOverlay(
         PopularBankPreset("Ozon Банк", "#005BFF", "🔵"),
         PopularBankPreset("Яндекс Банк", "#FCD91F", "⭐️"),
         PopularBankPreset("ВТБ", "#0E58A4", "💎"),
+        PopularBankPreset("Райффайзен", "#FFE000", "🌾"),
+        PopularBankPreset("Газпромбанк", "#1062AC", "Ⓜ️"),
+        PopularBankPreset("Совкомбанк", "#FF4F12", "🟠"),
+        PopularBankPreset("МТС Банк", "#E1251B", "🥚"),
         PopularBankPreset("Свой вариант", "#8B5CF6", "💳")
     )
     var selectedPresetIndex by remember { mutableIntStateOf(-1) }
 
     val localFocusManager = LocalFocusManager.current
+
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val animatedDragOffset by animateFloatAsState(
+        targetValue = dragOffsetY,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "dragOffset"
+    )
 
     // Full screen blur blocker overlay
     Box(
@@ -1377,6 +1482,7 @@ fun AddBankOverlay(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
+                .offset { IntOffset(0, animatedDragOffset.roundToInt().coerceAtLeast(0)) }
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -1389,19 +1495,45 @@ fun AddBankOverlay(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp)
+                    .padding(bottom = 24.dp, start = 24.dp, end = 24.dp)
                     .navigationBarsPadding(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Drag handle bar
+                // Header drag-capture area
                 Box(
                     modifier = Modifier
-                        .size(40.dp, 5.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f))
-                )
+                        .fillMaxWidth()
+                        .pointerInput(Unit) {
+                            detectDragGestures(
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    dragOffsetY = (dragOffsetY + dragAmount.y).coerceAtLeast(0f)
+                                },
+                                onDragEnd = {
+                                    if (dragOffsetY > 180f) {
+                                        onDismiss()
+                                    } else {
+                                        dragOffsetY = 0f
+                                    }
+                                },
+                                onDragCancel = {
+                                    dragOffsetY = 0f
+                                }
+                            )
+                        }
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Drag handle bar
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp, 6.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
+                    )
+                }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
                     "Добавить банк",
@@ -1664,6 +1796,13 @@ fun AddCashbackOverlay(
 
     val localFocusManager = LocalFocusManager.current
 
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val animatedDragOffset by animateFloatAsState(
+        targetValue = dragOffsetY,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "dragOffset"
+    )
+
     // Dialog layout
     Box(
         modifier = Modifier
@@ -1682,6 +1821,7 @@ fun AddCashbackOverlay(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
+                .offset { IntOffset(0, animatedDragOffset.roundToInt().coerceAtLeast(0)) }
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -1694,19 +1834,45 @@ fun AddCashbackOverlay(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp)
+                    .padding(bottom = 24.dp, start = 24.dp, end = 24.dp)
                     .navigationBarsPadding(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Drag handle bar
+                // Header drag-capture area
                 Box(
                     modifier = Modifier
-                        .size(40.dp, 5.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f))
-                )
+                        .fillMaxWidth()
+                        .pointerInput(Unit) {
+                            detectDragGestures(
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    dragOffsetY = (dragOffsetY + dragAmount.y).coerceAtLeast(0f)
+                                },
+                                onDragEnd = {
+                                    if (dragOffsetY > 180f) {
+                                        onDismiss()
+                                    } else {
+                                        dragOffsetY = 0f
+                                    }
+                                },
+                                onDragCancel = {
+                                    dragOffsetY = 0f
+                                }
+                            )
+                        }
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Drag handle bar
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp, 6.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
+                    )
+                }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
                     text = if (editingCashback != null) "Редактировать кешбэк" else "Добавить процент кешбэка",
