@@ -28,12 +28,10 @@ class MainActivity : ComponentActivity() {
 
     setContent {
       MyApplicationTheme {
-        Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-          CashbackMainScreen(
-            viewModel = viewModel,
-            modifier = Modifier.padding(innerPadding)
-          )
-        }
+        CashbackMainScreen(
+          viewModel = viewModel,
+          modifier = Modifier.fillMaxSize()
+        )
       }
     }
   }

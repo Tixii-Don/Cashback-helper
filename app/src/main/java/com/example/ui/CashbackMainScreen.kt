@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
@@ -132,7 +133,7 @@ fun CashbackMainScreen(
 
     // Pulsing scale for highlighting the FAB during the second step of onboarding
     val infiniteTransition = rememberInfiniteTransition(label = "onboarding_pulse")
-    val fabScale by infiniteTransition.animateFloat(
+    val fabScaleState = infiniteTransition.animateFloat(
         initialValue = 1f,
         targetValue = if (banks.isNotEmpty() && cashbacks.isEmpty() && tutorialStep > 0) 1.08f else 1f,
         animationSpec = infiniteRepeatable(
@@ -166,7 +167,11 @@ fun CashbackMainScreen(
                         modifier = Modifier
                             .testTag("add_cashback_fab")
                             .padding(bottom = 16.dp)
-                            .scale(fabScale)
+                            .graphicsLayer {
+                                val s = fabScaleState.value
+                                scaleX = s
+                                scaleY = s
+                            }
                             .then(fabBorderModifier)
                     )
                 }
@@ -257,7 +262,11 @@ fun CashbackMainScreen(
                     val findProfitableHighlight = banks.isNotEmpty() && cashbacks.isNotEmpty() && activeTab == "my_cards" && tutorialStep > 0
                     val bestDealsBorderModifier = if (findProfitableHighlight) {
                         Modifier
-                            .scale(fabScale)
+                            .graphicsLayer {
+                                val s = fabScaleState.value
+                                scaleX = s
+                                scaleY = s
+                            }
                             .border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
                     } else {
                         Modifier
@@ -299,7 +308,11 @@ fun CashbackMainScreen(
                     val myCardsHighlight = banks.isEmpty() && activeTab == "best_deals" && tutorialStep > 0
                     val myCardsBorderModifier = if (myCardsHighlight) {
                         Modifier
-                            .scale(fabScale)
+                            .graphicsLayer {
+                                val s = fabScaleState.value
+                                scaleX = s
+                                scaleY = s
+                            }
                             .border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
                     } else {
                         Modifier
@@ -407,7 +420,7 @@ fun CashbackMainScreen(
                                     showAddCashbackDialog = true
                                 },
                                 isTutorialHighlight = banks.isEmpty() && activeTab == "my_cards" && tutorialStep > 0,
-                                tutorialPulseScale = fabScale
+                                tutorialPulseScale = { fabScaleState.value }
                             )
                         }
                     }
@@ -533,6 +546,7 @@ fun CashbackMainScreen(
                 modifier = Modifier.matchParentSize()
             ) {
                 AddBankOverlay(
+                    existingBanks = banks,
                     onDismiss = { showAddBankDialog = false },
                     onSave = { name, colorHex, emoji ->
                         viewModel.addBank(name, colorHex, emoji)
@@ -905,7 +919,7 @@ fun MyCardsTabContent(
     onAddCashbackClick: (Long) -> Unit,
     onEditCashbackClick: (com.example.data.CashbackWithBank) -> Unit = {},
     isTutorialHighlight: Boolean = false,
-    tutorialPulseScale: Float = 1f
+    tutorialPulseScale: () -> Float = { 1f }
 ) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("cashback_prefs", android.content.Context.MODE_PRIVATE) }
@@ -997,7 +1011,11 @@ fun MyCardsTabContent(
                     onClick = onAddBankClick,
                     modifier = Modifier
                         .height(34.dp)
-                        .scale(if (isTutorialHighlight) tutorialPulseScale else 1f)
+                        .graphicsLayer {
+                            val scale = if (isTutorialHighlight) tutorialPulseScale() else 1f
+                            scaleX = scale
+                            scaleY = scale
+                        }
                         .testTag("add_bank_button"),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                     shape = RoundedCornerShape(10.dp),
@@ -1058,7 +1076,7 @@ fun MyCardsTabContent(
 
                 AnimatedVisibility(
                     visible = isVisible,
-                    enter = fadeIn(animationSpec = tween(250)) + expandVertically(animationSpec = tween(250)),
+                    enter = EnterTransition.None,
                     exit = fadeOut(animationSpec = tween(250)) + shrinkVertically(animationSpec = tween(250))
                 ) {
                     val bankColor = remember(bank.colorHex) { parseColorHex(bank.colorHex) }
@@ -1182,7 +1200,7 @@ fun MyCardsTabContent(
 
                                         AnimatedVisibility(
                                             visible = isCbVisible,
-                                            enter = fadeIn(animationSpec = tween(250)) + expandVertically(animationSpec = tween(250)),
+                                            enter = EnterTransition.None,
                                             exit = fadeOut(animationSpec = tween(250)) + shrinkVertically(animationSpec = tween(250))
                                         ) {
                                             Row(
@@ -1414,10 +1432,15 @@ fun MyCardsTabContent(
 
 @Composable
 fun AddBankOverlay(
+    existingBanks: List<Bank>,
     onDismiss: () -> Unit,
     onSave: (String, String, String) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
+    val isNameDuplicate = remember(name, existingBanks) {
+        val trimmed = name.trim()
+        existingBanks.any { it.name.trim().equals(trimmed, ignoreCase = true) }
+    }
     var selectedColorIndex by remember { mutableIntStateOf(0) }
     var selectedEmojiIndex by remember { mutableIntStateOf(0) }
 
@@ -1629,12 +1652,24 @@ fun AddBankOverlay(
                         .testTag("input_bank_name"),
                     singleLine = true,
                     shape = RoundedCornerShape(14.dp),
+                    isError = isNameDuplicate,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                        focusedBorderColor = if (isNameDuplicate) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = if (isNameDuplicate) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
                         focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)
                     )
                 )
+
+                if (isNameDuplicate) {
+                    Text(
+                        text = "Банк с таким названием уже добавлен!",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp, start = 4.dp)
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(18.dp))
 
@@ -1694,24 +1729,22 @@ fun AddBankOverlay(
                     items(bankColorsList.size) { index ->
                         val (hex, label) = bankColorsList[index]
                         val isSelected = selectedColorIndex == index
-                        this@Column.AnimatedVisibility(visible = true) {
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .background(parseColorHex(hex))
-                                    .border(3.dp, if (isSelected) MaterialTheme.colorScheme.outline else Color.Transparent, CircleShape)
-                                    .clickable { selectedColorIndex = index },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (isSelected) {
-                                    Icon(
-                                        Icons.Default.Done, 
-                                        contentDescription = null, 
-                                        tint = if (hex == "#FFDD2D" || hex == "#FCD91F") Color.Black else Color.White,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(parseColorHex(hex))
+                                .border(3.dp, if (isSelected) MaterialTheme.colorScheme.outline else Color.Transparent, CircleShape)
+                                .clickable { selectedColorIndex = index },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isSelected) {
+                                Icon(
+                                    Icons.Default.Done, 
+                                    contentDescription = null, 
+                                    tint = if (hex == "#FFDD2D" || hex == "#FCD91F") Color.Black else Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
                         }
                     }
@@ -1736,13 +1769,13 @@ fun AddBankOverlay(
 
                     Button(
                         onClick = {
-                            if (name.isNotBlank()) {
+                            if (name.isNotBlank() && !isNameDuplicate) {
                                 val (hexColor, _) = bankColorsList[selectedColorIndex]
                                 val emoji = bankEmojisList[selectedEmojiIndex]
                                 onSave(name.trim(), hexColor, emoji)
                             }
                         },
-                        enabled = name.isNotBlank(),
+                        enabled = name.isNotBlank() && !isNameDuplicate,
                         modifier = Modifier
                             .weight(1f)
                             .height(52.dp)
@@ -2041,6 +2074,14 @@ fun AddCashbackOverlay(
                                                     selectedPresetIndex = index
                                                     if (index != 0) {
                                                         customCategoryName = "" // clear custom field
+                                                        val selectedPreset = presets.getOrNull(index - 1)
+                                                        if (selectedPreset?.name == "Все покупки") {
+                                                            percentageString = "1"
+                                                        } else {
+                                                            percentageString = "5"
+                                                        }
+                                                    } else {
+                                                        percentageString = "5"
                                                     }
                                                 }
                                                 .padding(vertical = 12.dp, horizontal = 8.dp),
