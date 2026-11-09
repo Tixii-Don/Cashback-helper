@@ -7,12 +7,16 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import com.example.data.MccDirectory
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -36,6 +40,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -58,38 +63,44 @@ import androidx.compose.foundation.BorderStroke
 data class PopularBankPreset(val name: String, val colorHex: String, val emoji: String)
 
 
-// Utility helper to match categories to relevant descriptive emojis
-fun getEmojiForCategory(category: String, presetIcon: String = ""): String {
-    val norm = category.lowercase().trim()
-    return when {
-        norm.contains("супермаркет") || norm.contains("магазин") || norm.contains("продукт") || presetIcon == "shopping_cart" -> "🛒"
-        norm.contains("такси") || norm.contains("транспорт") || norm.contains("метро") || presetIcon == "local_taxi" -> "🚕"
-        norm.contains("ресторан") || norm.contains("кафе") || norm.contains("еда") || norm.contains("бургер") || presetIcon == "restaurant" -> "🍔"
-        norm.contains("аптек") || norm.contains("здоров") || norm.contains("лекарств") || presetIcon == "local_pharmacy" -> "💊"
-        norm.contains("одежд") || norm.contains("обувь") || norm.contains("плать") || presetIcon == "checkroom" -> "👕"
-        norm.contains("электроник") || norm.contains("техник") || norm.contains("телефон") || presetIcon == "devices" -> "💻"
-        norm.contains("топлив") || norm.contains("бензин") || norm.contains("азс") || presetIcon == "local_gas_station" -> "⛽️"
-        norm.contains("развлечен") || norm.contains("театр") || norm.contains("билет") || presetIcon == "theater_comedy" -> "🎟"
-        norm.contains("кино") || norm.contains("музе") || norm.contains("искусств") || presetIcon == "movie" -> "🎬"
-        norm.contains("красот") || norm.contains("салон") || norm.contains("спа") || norm.contains("косметик") || presetIcon == "spa" -> "💅"
-        norm.contains("дом") || norm.contains("ремонт") || norm.contains("мебель") || presetIcon == "construction" -> "🔨"
-        norm.contains("книг") || norm.contains("хобби") || presetIcon == "menu_book" -> "📚"
-        norm.contains("авиа") || norm.contains("билет") || norm.contains("путешеств") || presetIcon == "flight" -> "✈️"
-        norm.contains("спорт") || norm.contains("фитне") || presetIcon == "sports_soccer" -> "⚽️"
-        norm.contains("зоо") || norm.contains("животн") || norm.contains("корм") || presetIcon == "pets" -> "🐾"
-        norm.contains("игры") || norm.contains("игр") || norm.contains("гейм") || presetIcon == "videogame_asset" -> "🎮"
-        norm.contains("цветы") || norm.contains("подар") || norm.contains("сувенир") || presetIcon == "redeem" -> "🎁"
-        norm.contains("все покупки") || norm.contains("любые") || presetIcon == "percent" -> "💳"
-        else -> "💰"
+// Cache for colors and emojis to avoid allocations and lag during scroll
+private val colorCache = HashMap<String, Color>()
+fun parseColorHex(hex: String, default: Color = Color(0xFF673AB7)): Color {
+    return colorCache.getOrPut(hex) {
+        try {
+            Color(android.graphics.Color.parseColor(hex))
+        } catch (e: Exception) {
+            default
+        }
     }
 }
 
-// Convert Color Hex string back safely
-fun parseColorHex(hex: String, default: Color = Color(0xFF673AB7)): Color {
-    return try {
-        Color(android.graphics.Color.parseColor(hex))
-    } catch (e: Exception) {
-        default
+private val emojiCache = HashMap<String, String>()
+fun getEmojiForCategory(category: String, presetIcon: String = ""): String {
+    val cacheKey = "$category|$presetIcon"
+    return emojiCache.getOrPut(cacheKey) {
+        val norm = category.lowercase().trim()
+        when {
+            norm.contains("супермаркет") || norm.contains("магазин") || norm.contains("продукт") || presetIcon == "shopping_cart" -> "🛒"
+            norm.contains("автоуслуг") || norm.contains("автосервис") || norm.contains("мойк") || norm.contains("шин") || norm.contains("сто ") || presetIcon == "directions_car" -> "🚗"
+            norm.contains("такси") || norm.contains("транспорт") || norm.contains("метро") || presetIcon == "local_taxi" -> "🚕"
+            norm.contains("ресторан") || norm.contains("кафе") || norm.contains("еда") || norm.contains("бургер") || presetIcon == "restaurant" -> "🍔"
+            norm.contains("аптек") || norm.contains("здоров") || norm.contains("лекарств") || presetIcon == "local_pharmacy" -> "💊"
+            norm.contains("одежд") || norm.contains("обувь") || norm.contains("плать") || presetIcon == "checkroom" -> "👕"
+            norm.contains("электроник") || norm.contains("техник") || norm.contains("телефон") || presetIcon == "devices" -> "💻"
+            norm.contains("топлив") || norm.contains("бензин") || norm.contains("азс") || presetIcon == "local_gas_station" -> "⛽️"
+            norm.contains("развлечен") || norm.contains("театр") || (norm.contains("билет") && !norm.contains("авиа")) || presetIcon == "theater_comedy" -> "🎟"
+            norm.contains("кино") || norm.contains("музе") || norm.contains("искусств") || presetIcon == "movie" -> "🎬"
+            norm.contains("красот") || norm.contains("салон") || norm.contains("спа") || norm.contains("косметик") || presetIcon == "spa" -> "💅"
+            norm.contains("дом") || norm.contains("ремонт") || norm.contains("мебель") || presetIcon == "construction" -> "🔨"
+            norm.contains("книг") || norm.contains("хобби") || presetIcon == "menu_book" -> "📚"
+            norm.contains("авиа") || norm.contains("самолет") || norm.contains("путешеств") || presetIcon == "flight" -> "✈️"
+            norm.contains("спорт") || norm.contains("фитне") || presetIcon == "sports_soccer" -> "⚽️"
+            norm.contains("зоо") || norm.contains("животн") || norm.contains("корм") || presetIcon == "pets" -> "🐾"
+            norm.contains("цвет") || norm.contains("флорист") || presetIcon == "redeem" -> "💐"
+            norm.contains("все покупки") || norm.contains("любые") || presetIcon == "percent" -> "💳"
+            else -> "💰"
+        }
     }
 }
 
@@ -105,10 +116,11 @@ fun CashbackMainScreen(
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val selectedBankFilter by viewModel.selectedBankFilter.collectAsStateWithLifecycle()
 
-    var activeTab by remember { mutableStateOf("best_deals") } // "best_deals" or "my_cards"
-    var swipeOffsetX by remember { mutableFloatStateOf(0f) }
+    var selectedTabIndex by remember { mutableIntStateOf(0) }
+    val activeTab = if (selectedTabIndex == 0) "best_deals" else "my_cards"
     var showAddBankDialog by remember { mutableStateOf(false) }
     var showAddCashbackDialog by remember { mutableStateOf(false) }
+    var activeMccCashback by remember { mutableStateOf<CashbackWithBank?>(null) }
     var preselectedBankId by remember { mutableStateOf<Long?>(null) }
     var editingCashback by remember { mutableStateOf<CashbackWithBank?>(null) }
     
@@ -118,30 +130,37 @@ fun CashbackMainScreen(
     
     val focusManager = LocalFocusManager.current
 
-    // Back button handler to close any active overlay dialog instead of closing the app
-    if (showAddBankDialog || showAddCashbackDialog) {
+    // Back button handler to close any active overlay dialog or MCC sheet
+    if (showAddBankDialog || showAddCashbackDialog || activeMccCashback != null) {
         BackHandler {
-            if (showAddBankDialog) {
+            if (activeMccCashback != null) {
+                activeMccCashback = null
+            } else if (showAddBankDialog) {
                 showAddBankDialog = false
-            }
-            if (showAddCashbackDialog) {
+            } else if (showAddCashbackDialog) {
                 showAddCashbackDialog = false
                 editingCashback = null
             }
         }
     }
 
-    // Pulsing scale for highlighting the FAB during the second step of onboarding
-    val infiniteTransition = rememberInfiniteTransition(label = "onboarding_pulse")
-    val fabScaleState = infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (banks.isNotEmpty() && cashbacks.isEmpty() && tutorialStep > 0) 1.08f else 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "fab_pulse_scale"
-    )
+    // Pulsing scale for highlighting the FAB only during onboarding (idle when tutorial is complete to save CPU/battery)
+    val shouldPulseTutorial = tutorialStep > 0
+
+    val fabScaleState = if (shouldPulseTutorial && banks.isNotEmpty() && cashbacks.isEmpty()) {
+        val infiniteTransition = rememberInfiniteTransition(label = "onboarding_pulse")
+        infiniteTransition.animateFloat(
+            initialValue = 1f,
+            targetValue = 1.08f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(900, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "fab_pulse_scale"
+        )
+    } else {
+        remember { mutableFloatStateOf(1f) }
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -193,218 +212,189 @@ fun CashbackMainScreen(
                 .padding(innerPadding)
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp)
+                modifier = Modifier.fillMaxSize()
             ) {
                 // Header Title Section
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 16.dp, bottom = 12.dp),
+                        .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp)
+                    ) {
                         Text(
                             text = "Кешбэк Помощник",
                             style = MaterialTheme.typography.titleLarge.copy(
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.onBackground,
                                 letterSpacing = (-0.5).sp
-                            )
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = "Сравнивай проценты и выбирай лучший банк",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                            )
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                     
-                    // Quick Stat Counter Badge
+                    // Quick Stat Counter Badge with unbreakable horizontal alignment
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.secondaryContainer,
-                        modifier = Modifier.padding(start = 8.dp)
+                        modifier = Modifier.padding(start = 4.dp)
                     ) {
-                        Text(
-                            text = "${banks.size} 🏦 • ${cashbacks.size} 🏷️",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.SemiBold,
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "${banks.size}",
+                                fontWeight = FontWeight.ExtraBold,
+                                style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer
-                            ),
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        )
+                            )
+                            Text("🏦", fontSize = 11.sp)
+                            Text(
+                                "•",
+                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f),
+                                fontSize = 10.sp
+                            )
+                            Text(
+                                text = "${cashbacks.size}",
+                                fontWeight = FontWeight.ExtraBold,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            Text("🏷️", fontSize = 11.sp)
+                        }
                     }
                 }
 
-                // Custom Tab Segmented Control
+                // Highlight triggers based on selected tab state
+                val findProfitableHighlight = banks.isNotEmpty() && cashbacks.isNotEmpty() && activeTab == "my_cards" && tutorialStep > 0
+                val myCardsHighlight = banks.isEmpty() && activeTab == "best_deals" && tutorialStep > 0
+                val isMyCardsTutorialHighlight = banks.isEmpty() && activeTab == "my_cards" && tutorialStep > 0
+
+                // Back gesture handler on "Банки" page to smoothly scroll back to "Категории"
+                BackHandler(enabled = selectedTabIndex == 1 && !showAddBankDialog && !showAddCashbackDialog && activeMccCashback == null) {
+                    selectedTabIndex = 0
+                }
+
+                // Custom Tab Segmented Control with isolated glowing borders
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 12.dp)
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
                         .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
                         .padding(4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    val tabModifier = Modifier
-                        .weight(1f)
-                        .padding(vertical = 10.dp)
-                        .clip(RoundedCornerShape(12.dp))
-
-                    val activeTabColor = MaterialTheme.colorScheme.surface
-                    val activeTextColor = MaterialTheme.colorScheme.primary
-
-                    // Best Deals tab
-                    val findProfitableHighlight = banks.isNotEmpty() && cashbacks.isNotEmpty() && activeTab == "my_cards" && tutorialStep > 0
-                    val bestDealsBorderModifier = if (findProfitableHighlight) {
-                        Modifier
-                            .graphicsLayer {
-                                val s = fabScaleState.value
-                                scaleX = s
-                                scaleY = s
+                    // Categories tab (formerly Где выгоднее)
+                    GlowingTabItem(
+                        title = "Категории",
+                        icon = Icons.Default.Star,
+                        isSelected = selectedTabIndex == 0,
+                        isHighlighted = findProfitableHighlight,
+                        testTag = "tab_best_deals",
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            selectedTabIndex = 0
+                            if (banks.isNotEmpty() && cashbacks.isNotEmpty() && tutorialStep > 0) {
+                                tutorialStep = 0
+                                prefs.edit().putInt("tutorial_step_key", 0).apply()
+                                Toast.makeText(context, "Обучение завершено! 🎉 Удачи в поиске максимального кешбэка!", Toast.LENGTH_LONG).show()
                             }
-                            .border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
-                    } else {
-                        Modifier
-                    }
-
-                    Box(
-                        modifier = tabModifier
-                            .then(bestDealsBorderModifier)
-                            .testTag("tab_best_deals")
-                            .background(if (activeTab == "best_deals") activeTabColor else Color.Transparent)
-                            .clickable { 
-                                activeTab = "best_deals"
-                                if (banks.isNotEmpty() && cashbacks.isNotEmpty() && tutorialStep > 0) {
-                                    tutorialStep = 0
-                                    prefs.edit().putInt("tutorial_step_key", 0).apply()
-                                    Toast.makeText(context, "Обучение завершено! 🎉 Удачи в поиске максимального кешбэка!", Toast.LENGTH_LONG).show()
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.Star, 
-                                contentDescription = null, 
-                                tint = if (activeTab == "best_deals") activeTextColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                "Где выгоднее?",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = if (activeTab == "best_deals") activeTextColor else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
-                    }
+                    )
 
-                    // My Cards/Banks tab
-                    val myCardsHighlight = banks.isEmpty() && activeTab == "best_deals" && tutorialStep > 0
-                    val myCardsBorderModifier = if (myCardsHighlight) {
-                        Modifier
-                            .graphicsLayer {
-                                val s = fabScaleState.value
-                                scaleX = s
-                                scaleY = s
-                            }
-                            .border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
-                    } else {
-                        Modifier
-                    }
+                    Spacer(modifier = Modifier.width(4.dp))
 
-                    Box(
-                        modifier = tabModifier
-                            .then(myCardsBorderModifier)
-                            .testTag("tab_my_cards")
-                            .background(if (activeTab == "my_cards") activeTabColor else Color.Transparent)
-                            .clickable { activeTab = "my_cards" },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.Home, 
-                                contentDescription = null, 
-                                tint = if (activeTab == "my_cards") activeTextColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                "Мои Банки",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = if (activeTab == "my_cards") activeTextColor else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                    // Banks tab (formerly Мои Банки)
+                    GlowingTabItem(
+                        title = "Банки",
+                        icon = Icons.Default.Home,
+                        isSelected = selectedTabIndex == 1,
+                        isHighlighted = myCardsHighlight,
+                        testTag = "tab_my_cards",
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            selectedTabIndex = 1
                         }
-                    }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                // Render Active Panel
+                LaunchedEffect(selectedTabIndex) {
+                    if (selectedTabIndex == 0 && banks.isNotEmpty() && cashbacks.isNotEmpty() && tutorialStep > 0) {
+                        tutorialStep = 0
+                        prefs.edit().putInt("tutorial_step_key", 0).apply()
+                        Toast.makeText(context, "Обучение завершено! 🎉 Удачи в поиске максимального кешбэка!", Toast.LENGTH_LONG).show()
+                    }
+                }
+
+                // High-performance AnimatedContent tab container with smooth horizontal swipe navigation
                 AnimatedContent(
-                    targetState = activeTab,
+                    targetState = selectedTabIndex,
                     transitionSpec = {
-                        if (targetState == "my_cards") {
-                            (slideInHorizontally { width -> width / 2 } + fadeIn(animationSpec = tween(200)))
-                                .togetherWith(slideOutHorizontally { width -> -width / 2 } + fadeOut(animationSpec = tween(200)))
+                        if (targetState > initialState) {
+                            (slideInHorizontally(animationSpec = tween(280, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(250)))
+                                .togetherWith(slideOutHorizontally(animationSpec = tween(280, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(200)))
                         } else {
-                            (slideInHorizontally { width -> -width / 2 } + fadeIn(animationSpec = tween(200)))
-                                .togetherWith(slideOutHorizontally { width -> width / 2 } + fadeOut(animationSpec = tween(200)))
+                            (slideInHorizontally(animationSpec = tween(280, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(250)))
+                                .togetherWith(slideOutHorizontally(animationSpec = tween(280, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(200)))
                         }
                     },
                     modifier = Modifier
                         .weight(1f)
-                        .pointerInput(activeTab) {
+                        .pointerInput(selectedTabIndex) {
+                            var dragDistance = 0f
                             detectHorizontalDragGestures(
+                                onDragStart = { dragDistance = 0f },
                                 onDragEnd = {
-                                    if (swipeOffsetX < -120f) {
-                                        // Swipe Left (drag finger left) -> Switch to right tab: "my_cards"
-                                        if (activeTab == "best_deals") {
-                                            activeTab = "my_cards"
-                                        }
-                                    } else if (swipeOffsetX > 120f) {
-                                        // Swipe Right (drag finger right) -> Switch to left tab: "best_deals"
-                                        if (activeTab == "my_cards") {
-                                            activeTab = "best_deals"
-                                            if (banks.isNotEmpty() && cashbacks.isNotEmpty() && tutorialStep > 0) {
-                                                tutorialStep = 0
-                                                prefs.edit().putInt("tutorial_step_key", 0).apply()
-                                                Toast.makeText(context, "Обучение завершено! 🎉 Удачи в поиске максимального кешбэка!", Toast.LENGTH_LONG).show()
-                                            }
-                                        }
+                                    val swipeThreshold = 45.dp.toPx()
+                                    if (dragDistance < -swipeThreshold && selectedTabIndex == 0) {
+                                        selectedTabIndex = 1
+                                    } else if (dragDistance > swipeThreshold && selectedTabIndex == 1) {
+                                        selectedTabIndex = 0
                                     }
-                                    swipeOffsetX = 0f
                                 },
-                                onHorizontalDrag = { change, dragAmount ->
-                                    change.consume()
-                                    swipeOffsetX += dragAmount
-                                },
-                                onDragCancel = {
-                                    swipeOffsetX = 0f
+                                onHorizontalDrag = { _, dragAmount ->
+                                    dragDistance += dragAmount
                                 }
                             )
                         },
-                    label = "tab_transition"
-                ) { targetTab ->
-                    when (targetTab) {
-                        "best_deals" -> {
+                    label = "tab_animated_content"
+                ) { page ->
+                    when (page) {
+                        0 -> {
                             BestDealsTabContent(
                                 viewModel = viewModel,
                                 filteredCashbacks = filteredCashbacks,
+                                allCashbacks = cashbacks,
                                 searchQuery = searchQuery,
                                 banksAvailable = banks.isNotEmpty(),
                                 onSelectCategoryPreset = { preset ->
                                     viewModel.searchQuery.value = preset
-                                }
+                                },
+                                onAddBankClick = { showAddBankDialog = true },
+                                onCashbackClick = { cb -> activeMccCashback = cb }
                             )
                         }
-                        "my_cards" -> {
+                        1 -> {
                             MyCardsTabContent(
                                 viewModel = viewModel,
                                 banks = banks,
@@ -419,8 +409,9 @@ fun CashbackMainScreen(
                                     editingCashback = cb
                                     showAddCashbackDialog = true
                                 },
-                                isTutorialHighlight = banks.isEmpty() && activeTab == "my_cards" && tutorialStep > 0,
-                                tutorialPulseScale = { fabScaleState.value }
+                                onMccClick = { cb -> activeMccCashback = cb },
+                                isTutorialHighlight = isMyCardsTutorialHighlight,
+                                isTutorialActive = tutorialStep > 0
                             )
                         }
                     }
@@ -429,10 +420,10 @@ fun CashbackMainScreen(
 
             // 💡 Interactive Onboarding Tutorial Assistant Box
             if (tutorialStep > 0) {
-                // Determine text description dynamically based on actual app usage state
+                // Determine text description dynamically based on actual selected app state
                 val tutorialText = when {
                     banks.isEmpty() && activeTab == "best_deals" -> {
-                        "👋 Добро пожаловать в Кешбэк Помощник! Давайте научимся пользоваться приложением.\n\n👉 Шаг 1 из 3: Перейдите во вкладку 'Мои Банки' (вверху), чтобы добавить ваш первый банк."
+                        "👋 Добро пожаловать в Кешбэк Помощник! Давайте научимся пользоваться приложением.\n\n👉 Шаг 1 из 3: Перейдите во вкладку 'Банки' (вверху), чтобы добавить ваш первый банк."
                     }
                     banks.isEmpty() && activeTab == "my_cards" -> {
                         "🎯 Шаг 1 из 3: Отлично! Теперь нажмите кнопку 'Новый Банк' вверху экрана, чтобы добавить ваш банк."
@@ -441,7 +432,7 @@ fun CashbackMainScreen(
                         "💸 Шаг 2 из 3: Супер, ваш первый банк успешно добавлен! Теперь внесите процент кешбэка по любой категории. Нажмите круглую зелёную кнопку 'Внести кешбэк' внизу справа."
                     }
                     banks.isNotEmpty() && cashbacks.isNotEmpty() -> {
-                        "🎉 Шаг 3 из 3: Всё настроено! Теперь откройте вкладку 'Где выгоднее?' (сверху). Начните вводить в поиск категорию (например, такси) или кликните готовые чипсы — мы автоматически выберем банк с максимальным возвратом!"
+                        "🎉 Шаг 3 из 3: Всё настроено! Теперь откройте вкладку 'Категории' (сверху). Начните вводить в поиск категорию (например, такси) или кликните готовые чипсы — мы автоматически выберем банк с максимальным возвратом!"
                     }
                     else -> {
                         "📈 Всё готово! Добавляйте новые банки и проводите поиск лучших предложений."
@@ -587,17 +578,212 @@ fun CashbackMainScreen(
                     }
                 )
             }
+
+            // MCC Information Modal Dialog
+            if (activeMccCashback != null) {
+                MccInfoDialog(
+                    cashback = activeMccCashback,
+                    onDismiss = { activeMccCashback = null },
+                    onEditCashback = { cb ->
+                        activeMccCashback = null
+                        editingCashback = cb
+                        showAddCashbackDialog = true
+                    }
+                )
+            }
         }
     }
+}
+
+@Composable
+fun GlowingTabItem(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    isSelected: Boolean,
+    isHighlighted: Boolean,
+    testTag: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val glowAlpha = if (isHighlighted) {
+        val transition = rememberInfiniteTransition(label = "tab_glow")
+        transition.animateFloat(
+            initialValue = 0.25f,
+            targetValue = 1.0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(700, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "tab_glow_alpha"
+        ).value
+    } else {
+        0f
+    }
+
+    val activeTabColor = MaterialTheme.colorScheme.surface
+    val activeTextColor = MaterialTheme.colorScheme.primary
+
+    Box(
+        modifier = modifier
+            .testTag(testTag)
+            .clip(RoundedCornerShape(12.dp))
+            .then(
+                if (isHighlighted) {
+                    Modifier
+                        .border(
+                            width = 2.5.dp,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = glowAlpha),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .background(
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = glowAlpha * 0.15f),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                } else Modifier
+            )
+            .background(if (isSelected) activeTabColor else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (isSelected) activeTextColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                title,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = if (isSelected) activeTextColor else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+fun AddBankButton(
+    onClick: () -> Unit,
+    isTutorialHighlight: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val scale = if (isTutorialHighlight) {
+        val transition = rememberInfiniteTransition(label = "new_bank_zoom")
+        transition.animateFloat(
+            initialValue = 1.0f,
+            targetValue = 1.09f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(750, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "new_bank_scale"
+        ).value
+    } else {
+        1.0f
+    }
+
+    Button(
+        onClick = onClick,
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                clip = false
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.85f, 0.5f)
+            }
+            .height(36.dp)
+            .testTag("add_bank_button"),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+        shape = RoundedCornerShape(10.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (isTutorialHighlight) Color(0xFF2E7D32) else MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = if (isTutorialHighlight) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
+        ),
+        elevation = if (isTutorialHighlight) ButtonDefaults.buttonElevation(defaultElevation = 4.dp) else ButtonDefaults.buttonElevation()
+    ) {
+        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+        Spacer(modifier = Modifier.width(4.dp))
+        Text("Новый Банк", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+fun AnimatedCategoryChip(
+    title: String,
+    emoji: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.91f else if (isSelected) 1.05f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "chip_scale"
+    )
+
+    FilterChip(
+        selected = isSelected,
+        onClick = onClick,
+        interactionSource = interactionSource,
+        label = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(emoji, fontSize = 14.sp)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    title,
+                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium
+                )
+            }
+        },
+        leadingIcon = if (isSelected) {
+            {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+        } else null,
+        shape = RoundedCornerShape(12.dp),
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
+        ),
+        border = FilterChipDefaults.filterChipBorder(
+            enabled = true,
+            selected = isSelected,
+            borderColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+            borderWidth = if (isSelected) 1.5.dp else 1.dp
+        ),
+        modifier = modifier
+            .height(38.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+    )
 }
 
 @Composable
 fun BestDealsTabContent(
     viewModel: CashbackViewModel,
     filteredCashbacks: List<CashbackWithBank>,
+    allCashbacks: List<CashbackWithBank>,
     searchQuery: String,
     banksAvailable: Boolean,
-    onSelectCategoryPreset: (String) -> Unit
+    onSelectCategoryPreset: (String) -> Unit,
+    onAddBankClick: () -> Unit,
+    onCashbackClick: (CashbackWithBank) -> Unit = {}
 ) {
     var cashbackToDelete by remember { mutableStateOf<CashbackWithBank?>(null) }
 
@@ -625,6 +811,26 @@ fun BestDealsTabContent(
         )
     }
 
+    val availableCategories: List<Pair<String, String>> = remember(allCashbacks, searchQuery) {
+        val uniqueCategories = if (allCashbacks.isNotEmpty()) {
+            allCashbacks.map { it.category }.distinct()
+        } else {
+            viewModel.presetCategories.map { it.name }
+        }
+        val fullList = mutableListOf(Pair("Все", "🌟"))
+        uniqueCategories.forEach { cat ->
+            val emoji = getEmojiForCategory(cat)
+            fullList.add(Pair(cat, emoji))
+        }
+        if (searchQuery.isNotBlank()) {
+            fullList.filter { (cat, _) ->
+                cat == "Все" || cat.contains(searchQuery, ignoreCase = true)
+            }
+        } else {
+            fullList
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         // Search bar
         OutlinedTextField(
@@ -632,8 +838,9 @@ fun BestDealsTabContent(
             onValueChange = { viewModel.searchQuery.value = it },
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(horizontal = 16.dp)
                 .testTag("search_cashback_field"),
-            placeholder = { Text("Искать категорию: например, такси") },
+            placeholder = { Text("Название категории") },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
             trailingIcon = {
                 if (searchQuery.isNotEmpty()) {
@@ -652,45 +859,34 @@ fun BestDealsTabContent(
             )
         )
 
-        // Hot Categories Preset Row for instant clicks
-        val fastCategories = listOf(
-            "Все" to "💰",
-            "Супермаркеты" to "🛒",
-            "Такси и Транспорт" to "🚕",
-            "Рестораны и Кафе" to "🍔",
-            "Аптеки" to "💊",
-            "Одежда" to "👕",
-            "Электроника" to "💻",
-            "Топливо" to "⛽️",
-            "Развлечения" to "🎟"
-        )
+        // Display category filter chips naturally edge-to-edge
+        if (availableCategories.isNotEmpty()) {
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp)
+            ) {
+                items(availableCategories, key = { it.first }) { pair ->
+                    val (title, emoji) = pair
+                    val isSelected = (title == "Все" && searchQuery.isEmpty()) || 
+                                     (title != "Все" && searchQuery.equals(title, ignoreCase = true))
 
-        LazyRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(end = 12.dp)
-        ) {
-            items(fastCategories, key = { it.first }) { pair ->
-                val (title, emoji) = pair
-                val isSelected = (title == "Все" && searchQuery.isEmpty()) || 
-                                 (title != "Все" && searchQuery.equals(title, ignoreCase = true))
-
-                FilterChip(
-                    selected = isSelected,
-                    onClick = {
-                        onSelectCategoryPreset(if (title == "Все") "" else title)
-                    },
-                    label = { Text("$emoji $title", fontWeight = FontWeight.Medium) },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
-                    ),
-                    modifier = Modifier.height(38.dp)
-                )
+                    AnimatedCategoryChip(
+                        title = title,
+                        emoji = emoji,
+                        isSelected = isSelected,
+                        onClick = {
+                            onSelectCategoryPreset(if (title == "Все") "" else title)
+                        },
+                        modifier = Modifier.animateItem(
+                            fadeInSpec = tween(250),
+                            fadeOutSpec = tween(250),
+                            placementSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                        )
+                    )
+                }
             }
         }
 
@@ -702,6 +898,7 @@ fun BestDealsTabContent(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
                         .weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
@@ -717,13 +914,17 @@ fun BestDealsTabContent(
                             style = MaterialTheme.typography.titleMedium,
                             textAlign = TextAlign.Center
                         )
-                        Text(
-                            "Перейдите во вкладку 'Мои Банки', чтобы добавить свой первый банк и внести туда активные категории.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(top = 6.dp)
-                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = onAddBankClick,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            modifier = Modifier.testTag("add_bank_from_best_deals")
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Добавить банк", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -735,23 +936,27 @@ fun BestDealsTabContent(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
                         .weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
+                    val noCategoriesAtAll = allCashbacks.isEmpty()
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.padding(24.dp)
                     ) {
-                        Text("🔍", fontSize = 48.sp)
+                        Text(if (noCategoriesAtAll) "💳" else "🔍", fontSize = 48.sp)
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            "Полученные кешбэки не найдены",
+                            text = if (noCategoriesAtAll) "Нет добавленных категорий кешбэка"
+                                   else "Категории не найдены",
                             fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium
+                            style = MaterialTheme.typography.titleMedium,
+                            textAlign = TextAlign.Center
                         )
                         Text(
-                            if (searchQuery.isNotEmpty()) "Попробуйте ввести другой поисковый запрос или обнулить фильтр"
-                            else "Добавьте категории кешбэка с помощью кнопки '+'",
+                            text = if (noCategoriesAtAll) "Добавьте категории кешбэка для ваших карт с помощью кнопки '+'"
+                                   else "Попробуйте ввести другой поисковый запрос или выбрать другой банк",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
@@ -767,7 +972,7 @@ fun BestDealsTabContent(
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(vertical = 4.dp, horizontal = 4.dp)
+                modifier = Modifier.padding(vertical = 4.dp, horizontal = 20.dp)
             )
 
             LazyColumn(
@@ -775,10 +980,19 @@ fun BestDealsTabContent(
                     .fillMaxSize()
                     .weight(1f),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 80.dp, top = 4.dp)
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 80.dp, top = 4.dp)
             ) {
                 items(filteredCashbacks, key = { cb -> cb.id }) { cb ->
-                    CashbackRankItem(cb, onDeleteClick = { cashbackToDelete = cb })
+                    CashbackRankItem(
+                        cb = cb,
+                        onMccClick = { onCashbackClick(cb) },
+                        onDeleteClick = { cashbackToDelete = cb },
+                        modifier = Modifier.animateItem(
+                            fadeInSpec = tween(300),
+                            fadeOutSpec = tween(300),
+                            placementSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                        )
+                    )
                 }
             }
         }
@@ -788,17 +1002,25 @@ fun BestDealsTabContent(
 @Composable
 fun CashbackRankItem(
     cb: CashbackWithBank,
-    onDeleteClick: () -> Unit
+    onMccClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val bankColor = remember(cb.bankColorHex) { parseColorHex(cb.bankColorHex) }
     val categoryEmoji = remember(cb.category, cb.iconName) { getEmojiForCategory(cb.category, cb.iconName) }
+    val percentGradient = remember(bankColor) {
+        Brush.horizontalGradient(
+            colors = listOf(bankColor, bankColor.copy(alpha = 0.85f))
+        )
+    }
     
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .shadow(2.dp, RoundedCornerShape(16.dp))
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.08f), RoundedCornerShape(16.dp)),
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+            .clickable(onClick = onMccClick),
         shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         )
@@ -856,7 +1078,25 @@ fun CashbackRankItem(
                         text = "${cb.bankIconEmoji} ${cb.bankName}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // MCC indicator on its own dedicated row below the bank name
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                ) {
+                    Text(
+                        text = "МСС 🔍",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
             }
@@ -870,11 +1110,7 @@ fun CashbackRankItem(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
-                        .background(
-                            Brush.horizontalGradient(
-                                colors = listOf(bankColor, bankColor.copy(alpha = 0.85f))
-                            )
-                        )
+                        .background(percentGradient)
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -918,18 +1154,16 @@ fun MyCardsTabContent(
     onAddBankClick: () -> Unit,
     onAddCashbackClick: (Long) -> Unit,
     onEditCashbackClick: (com.example.data.CashbackWithBank) -> Unit = {},
+    onMccClick: (com.example.data.CashbackWithBank) -> Unit = {},
     isTutorialHighlight: Boolean = false,
-    tutorialPulseScale: () -> Float = { 1f }
+    isTutorialActive: Boolean = false
 ) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("cashback_prefs", android.content.Context.MODE_PRIVATE) }
     var notificationsEnabled by remember { mutableStateOf(prefs.getBoolean("notifications_enabled", false)) }
 
     var bankToDelete by remember { mutableStateOf<Bank?>(null) }
-    var runningExitAnimBankId by remember { mutableStateOf<Long?>(null) }
-
     var cashbackToDeleteInBank by remember { mutableStateOf<com.example.data.CashbackWithBank?>(null) }
-    var runningExitAnimCid by remember { mutableStateOf<Long?>(null) }
 
     // Dialog for bank deletion confirmation
     if (bankToDelete != null) {
@@ -940,10 +1174,7 @@ fun MyCardsTabContent(
             confirmButton = {
                 Button(
                     onClick = {
-                        val idToExit = bankToDelete?.id
-                        if (idToExit != null) {
-                            runningExitAnimBankId = idToExit
-                        }
+                        bankToDelete?.let { viewModel.removeBank(it.id) }
                         bankToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
@@ -968,10 +1199,7 @@ fun MyCardsTabContent(
             confirmButton = {
                 Button(
                     onClick = {
-                        val cidToExit = cashbackToDeleteInBank?.id
-                        if (cidToExit != null) {
-                            runningExitAnimCid = cidToExit
-                        }
+                        cashbackToDeleteInBank?.let { viewModel.removeCashback(it.id) }
                         cashbackToDeleteInBank = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
@@ -990,13 +1218,13 @@ fun MyCardsTabContent(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(bottom = 100.dp, top = 4.dp)
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 100.dp, top = 4.dp)
     ) {
         item {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                    .padding(top = 8.dp, bottom = 8.dp, end = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -1006,37 +1234,20 @@ fun MyCardsTabContent(
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 
-                // Add Bank Shortcut
-                Button(
+                // Add Bank Shortcut with restored scale/zoom animation and safe margins
+                AddBankButton(
                     onClick = onAddBankClick,
-                    modifier = Modifier
-                        .height(34.dp)
-                        .graphicsLayer {
-                            val scale = if (isTutorialHighlight) tutorialPulseScale() else 1f
-                            scaleX = scale
-                            scaleY = scale
-                        }
-                        .testTag("add_bank_button"),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    border = if (isTutorialHighlight) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isTutorialHighlight) Color(0xFF2E7D32) else MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = if (isTutorialHighlight) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Новый Банк", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
+                    isTutorialHighlight = isTutorialHighlight
+                )
             }
         }
 
         if (banks.isEmpty()) {
-            item {
+            item(key = "empty_banks_placeholder") {
                 AnimatedVisibility(
                     visible = true,
-                    enter = fadeIn(animationSpec = tween(500))
+                    enter = fadeIn(animationSpec = tween(350)),
+                    exit = fadeOut(animationSpec = tween(200))
                 ) {
                     Box(
                         modifier = Modifier
@@ -1065,196 +1276,196 @@ fun MyCardsTabContent(
             }
         } else {
             items(banks, key = { it.id }) { bank ->
-                val isVisible = runningExitAnimBankId != bank.id
-                LaunchedEffect(isVisible) {
-                    if (!isVisible) {
-                        delay(250)
-                        viewModel.removeBank(bank.id)
-                        runningExitAnimBankId = null
-                    }
+                val bankColor = remember(bank.colorHex) { parseColorHex(bank.colorHex) }
+                val bankCashbacks = remember(cashbacks, bank.id) { cashbacks.filter { it.bankId == bank.id } }
+                val headerGradient = remember(bankColor) {
+                    Brush.horizontalGradient(
+                        colors = listOf(bankColor, bankColor.copy(alpha = 0.85f))
+                    )
                 }
 
-                AnimatedVisibility(
-                    visible = isVisible,
-                    enter = EnterTransition.None,
-                    exit = fadeOut(animationSpec = tween(250)) + shrinkVertically(animationSpec = tween(250))
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem()
+                        .shadow(3.dp, RoundedCornerShape(18.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f), RoundedCornerShape(18.dp)),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    shape = RoundedCornerShape(18.dp)
                 ) {
-                    val bankColor = remember(bank.colorHex) { parseColorHex(bank.colorHex) }
-                    val bankCashbacks = remember(cashbacks, bank.id) { cashbacks.filter { it.bankId == bank.id } }
+                    Column {
+                        // Header block styled with actual brand color
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(headerGradient)
+                                .padding(horizontal = 16.dp, vertical = 14.dp)
+                        ) {
+                            val lightText = Color.White
+                            val darkText = Color(0xFF1E293B)
+                            val headerTextColor = if (bank.colorHex.lowercase() == "#ffdd2d" || bank.colorHex.lowercase() == "#fcd91f") darkText else lightText
 
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .shadow(3.dp, RoundedCornerShape(18.dp))
-                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f), RoundedCornerShape(18.dp)),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        ),
-                        shape = RoundedCornerShape(18.dp)
-                    ) {
-                        Column {
-                            // Header block styled with actual brand color
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(
-                                        Brush.horizontalGradient(
-                                            colors = listOf(bankColor, bankColor.copy(alpha = 0.85f))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = bank.iconEmoji,
+                                        fontSize = 22.sp,
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                    Text(
+                                        text = bank.name,
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = headerTextColor
                                         )
                                     )
-                                    .padding(horizontal = 16.dp, vertical = 14.dp)
-                            ) {
-                                val lightText = Color.White
-                                val darkText = Color(0xFF1E293B)
-                                val headerTextColor = if (bank.colorHex.lowercase() == "#ffdd2d" || bank.colorHex.lowercase() == "#fcd91f") darkText else lightText
+                                }
 
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = bank.iconEmoji,
-                                            fontSize = 22.sp,
-                                            modifier = Modifier.padding(end = 8.dp)
-                                        )
-                                        Text(
-                                            text = bank.name,
-                                            style = MaterialTheme.typography.titleMedium.copy(
-                                                fontWeight = FontWeight.ExtraBold,
-                                                color = headerTextColor
-                                            )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    // Quick add button inside card header and preselected this bank
+                                    IconButton(
+                                        onClick = { onAddCashbackClick(bank.id) },
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Add,
+                                            contentDescription = "Add Cashback to bank",
+                                            tint = headerTextColor
                                         )
                                     }
+                                    
+                                    Spacer(modifier = Modifier.width(2.dp))
 
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        // Quick add button inside card header and preselected this bank
-                                        IconButton(
-                                            onClick = { onAddCashbackClick(bank.id) },
-                                            modifier = Modifier.size(34.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Add,
-                                                contentDescription = "Add Cashback to bank",
-                                                tint = headerTextColor
-                                            )
-                                        }
-                                        
-                                        Spacer(modifier = Modifier.width(2.dp))
-
-                                        // Delete bank button
-                                        IconButton(
-                                            onClick = { bankToDelete = bank },
-                                            modifier = Modifier.size(34.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Delete,
-                                                contentDescription = "Remove Bank",
-                                                tint = headerTextColor.copy(alpha = 0.85f)
-                                            )
-                                        }
+                                    // Delete bank button
+                                    IconButton(
+                                        onClick = { bankToDelete = bank },
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = "Remove Bank",
+                                            tint = headerTextColor.copy(alpha = 0.85f)
+                                        )
                                     }
                                 }
                             }
+                        }
 
-                            // Categories listed of that bank
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                if (bankCashbacks.isEmpty()) {
+                        // Categories listed of that bank
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (bankCashbacks.isEmpty()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Info, 
+                                        contentDescription = null, 
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "Кешбэк ещё не внесён",
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        )
+                                    )
+                                }
+                            } else {
+                                bankCashbacks.forEach { cb ->
+                                    val categoryEmoji = remember(cb.category, cb.iconName) { getEmojiForCategory(cb.category, cb.iconName) }
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = 12.dp),
-                                        horizontalArrangement = Arrangement.Center,
-                                        verticalAlignment = Alignment.CenterVertically
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                            .clickable { onMccClick(cb) }
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Icon(
-                                            Icons.Default.Info, 
-                                            contentDescription = null, 
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            "Кешбэк ещё не внесён",
-                                            style = MaterialTheme.typography.bodyMedium.copy(
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text(
+                                                text = categoryEmoji,
+                                                fontSize = 20.sp,
+                                                modifier = Modifier.padding(end = 8.dp)
                                             )
-                                        )
-                                    }
-                                } else {
-                                    bankCashbacks.forEach { cb ->
-                                        val isCbVisible = runningExitAnimCid != cb.id
-                                        LaunchedEffect(isCbVisible) {
-                                            if (!isCbVisible) {
-                                                delay(250)
-                                                viewModel.removeCashback(cb.id)
-                                                runningExitAnimCid = null
+                                            Column {
+                                                Text(
+                                                    text = cb.category,
+                                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    ),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                                    modifier = Modifier.padding(top = 2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "МСС-коды 🔍",
+                                                        style = MaterialTheme.typography.labelSmall.copy(
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.primary
+                                                        ),
+                                                        fontSize = 9.sp,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    )
+                                                }
                                             }
                                         }
 
-                                        AnimatedVisibility(
-                                            visible = isCbVisible,
-                                            enter = EnterTransition.None,
-                                            exit = fadeOut(animationSpec = tween(250)) + shrinkVertically(animationSpec = tween(250))
-                                        ) {
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clip(RoundedCornerShape(12.dp))
-                                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                                                    .clickable { onEditCashbackClick(cb) }
-                                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.SpaceBetween
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "${cb.percentage}%",
+                                                style = MaterialTheme.typography.titleMedium.copy(
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    color = bankColor
+                                                )
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            IconButton(
+                                                onClick = { onEditCashbackClick(cb) },
+                                                modifier = Modifier.size(28.dp)
                                             ) {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    modifier = Modifier.weight(1f)
-                                                ) {
-                                                    val categoryEmoji = remember(cb.category, cb.iconName) { getEmojiForCategory(cb.category, cb.iconName) }
-                                                    Text(
-                                                        text = categoryEmoji,
-                                                        fontSize = 20.sp,
-                                                        modifier = Modifier.padding(end = 8.dp)
-                                                    )
-                                                    Text(
-                                                        text = cb.category,
-                                                        style = MaterialTheme.typography.bodyMedium.copy(
-                                                            fontWeight = FontWeight.Bold,
-                                                            color = MaterialTheme.colorScheme.onSurface
-                                                        ),
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                }
-
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text(
-                                                        text = "${cb.percentage}%",
-                                                        style = MaterialTheme.typography.titleMedium.copy(
-                                                            fontWeight = FontWeight.ExtraBold,
-                                                            color = bankColor
-                                                        )
-                                                    )
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    IconButton(
-                                                        onClick = { cashbackToDeleteInBank = cb },
-                                                        modifier = Modifier.size(28.dp)
-                                                    ) {
-                                                        Icon(
-                                                            Icons.Default.Close, 
-                                                            contentDescription = "Delete", 
-                                                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
-                                                            modifier = Modifier.size(16.dp)
-                                                        )
-                                                    }
-                                                }
+                                                Icon(
+                                                    Icons.Default.Edit, 
+                                                    contentDescription = "Edit", 
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                            IconButton(
+                                                onClick = { cashbackToDeleteInBank = cb },
+                                                modifier = Modifier.size(28.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Close, 
+                                                    contentDescription = "Delete", 
+                                                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
                                             }
                                         }
                                     }
@@ -1266,164 +1477,191 @@ fun MyCardsTabContent(
             }
         }
 
-        // Reminders & Notifications Control Card
-        item {
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Runtime permission launcher for API 33+
-            val permissionLauncher = rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.RequestPermission()
-            ) { isGranted ->
-                if (isGranted) {
-                    com.example.notification.CashbackNotificationReceiver.scheduleMonthlyAlarm(context)
-                    prefs.edit().putBoolean("notifications_enabled", true).apply()
-                    notificationsEnabled = true
-                    Toast.makeText(context, "Уведомления включены! Мы напомним вам 28-го числа каждого месяца.", Toast.LENGTH_LONG).show()
-                } else {
-                    Toast.makeText(context, "Разрешение на уведомления отклонено.", Toast.LENGTH_SHORT).show()
+        // Only display Reminders and GitHub cards once the onboarding tutorial has been completed
+        if (!isTutorialActive) {
+            // Reminders & Notifications Control Card
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Permission launcher for scheduled monthly reminder
+                val monthlyPermissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestPermission()
+                ) { isGranted ->
+                    if (isGranted) {
+                        com.example.notification.CashbackNotificationReceiver.scheduleMonthlyAlarm(context)
+                        prefs.edit().putBoolean("notifications_enabled", true).apply()
+                        notificationsEnabled = true
+                        Toast.makeText(context, "Уведомления включены! Мы напомним вам 28-го числа каждого месяца.", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, "Разрешение на уведомления отклонено.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                // Separate permission launcher specifically for the Test button — DOES NOT enable monthly notifications!
+                val testPermissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestPermission()
+                ) { isGranted ->
+                    if (isGranted) {
+                        com.example.notification.CashbackNotificationReceiver.sendImmediateTestNotification(context)
+                        Toast.makeText(context, "Тестовое уведомление отправлено!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Разрешение на уведомления отклонено.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(
+                            width = 1.5.dp,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                            shape = RoundedCornerShape(20.dp)
+                        ),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                    ),
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("🔔", fontSize = 28.sp)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                      text = "Напоминания о кешбэке",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Конец каждого месяца (28 число)",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text(
+                            text = "В конце месяца банки обновляют любимые категории. Мы напомним вам открыть приложение и внести новые данные, чтобы всегда платить банком с максимальным процентом возврата!",
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 18.sp
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Activate toggle btn
+                            Button(
+                                onClick = {
+                                    if (notificationsEnabled) {
+                                        com.example.notification.CashbackNotificationReceiver.cancelMonthlyAlarm(context)
+                                        prefs.edit().putBoolean("notifications_enabled", false).apply()
+                                        notificationsEnabled = false
+                                        Toast.makeText(context, "Уведомления выключены.", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                            monthlyPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        } else {
+                                            com.example.notification.CashbackNotificationReceiver.scheduleMonthlyAlarm(context)
+                                            prefs.edit().putBoolean("notifications_enabled", true).apply()
+                                            notificationsEnabled = true
+                                            Toast.makeText(context, "Уведомления успешно включены!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.weight(1.3f),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (notificationsEnabled) MaterialTheme.colorScheme.error.copy(alpha = 0.85f) else MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Text(
+                                    text = if (notificationsEnabled) "Выкл. уведомления" else "Вкл. уведомления",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+
+                            // Test btn
+                            OutlinedButton(
+                                onClick = {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        val isGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+                                            context,
+                                            Manifest.permission.POST_NOTIFICATIONS
+                                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+                                        if (!isGranted) {
+                                            Toast.makeText(context, "Разрешите уведомления для проверки теста", Toast.LENGTH_SHORT).show()
+                                            testPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                            return@OutlinedButton
+                                        }
+                                    }
+                                    com.example.notification.CashbackNotificationReceiver.sendImmediateTestNotification(context)
+                                    Toast.makeText(context, "Тестовое уведомление отправлено!", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.onSurface
+                                )
+                            ) {
+                                Text("Тест 🚀", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    }
                 }
             }
 
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(
-                        width = 1.5.dp,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
-                        shape = RoundedCornerShape(20.dp)
+            // GitHub Repository Card
+            item {
+                val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { uriHandler.openUri("https://github.com/Tixii-Don/Cashback-helper") }
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(20.dp)
+                        ),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
                     ),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                ),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(18.dp)
+                    shape = RoundedCornerShape(20.dp)
                 ) {
                     Row(
+                        modifier = Modifier.padding(18.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("🔔", fontSize = 28.sp)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
+                        Text("🔗", fontSize = 28.sp)
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                  text = "Напоминания о кешбэке",
+                                text = "Проект на GitHub",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Конец каждого месяца (28 число)",
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.primary
+                                text = "https://github.com/Tixii-Don/Cashback-helper",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
+                        Text("😺", fontSize = 22.sp)
                     }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text(
-                        text = "В конце месяца банки обновляют любимые категории. Мы напомним вам открыть приложение и внести новые данные, чтобы всегда платить банком с максимальным процентом возврата!",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 18.sp
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Activate toggle btn
-                        Button(
-                            onClick = {
-                                if (notificationsEnabled) {
-                                    com.example.notification.CashbackNotificationReceiver.cancelMonthlyAlarm(context)
-                                    prefs.edit().putBoolean("notifications_enabled", false).apply()
-                                    notificationsEnabled = false
-                                    Toast.makeText(context, "Уведомления выключены.", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                        permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                    } else {
-                                        com.example.notification.CashbackNotificationReceiver.scheduleMonthlyAlarm(context)
-                                        prefs.edit().putBoolean("notifications_enabled", true).apply()
-                                        notificationsEnabled = true
-                                        Toast.makeText(context, "Уведомления успешно включены!", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            },
-                            modifier = Modifier.weight(1.3f),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (notificationsEnabled) MaterialTheme.colorScheme.error.copy(alpha = 0.85f) else MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Text(
-                                text = if (notificationsEnabled) "Выкл. уведомления" else "Вкл. уведомления",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-
-                        // Test btn
-                        OutlinedButton(
-                            onClick = {
-                                com.example.notification.CashbackNotificationReceiver.sendImmediateTestNotification(context)
-                                Toast.makeText(context, "Тестовое уведомление отправлено!", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.onSurface
-                            )
-                        ) {
-                            Text("Тест 🚀", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
-                    }
-                }
-            }
-        }
-
-        // GitHub Repository Card
-        item {
-            val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { uriHandler.openUri("https://github.com/Tixii-Don/Cashback-helper") }
-                    .border(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(20.dp)
-                    ),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("🔗", fontSize = 28.sp)
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Проект на GitHub",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "https://github.com/Tixii-Don/Cashback-helper",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Text("😺", fontSize = 22.sp)
                 }
             }
         }
@@ -1811,10 +2049,10 @@ fun AddCashbackOverlay(
     }
     var selectedPresetIndex by remember(editingCashback, presets) {
         mutableIntStateOf(
-            if (editingCashback == null) 0
+            if (editingCashback == null) 0 // Initially select "Все покупки" (index 0)
             else {
                 val matchedPresetIdx = presets.indexOfFirst { it.name == editingCashback.category }
-                if (matchedPresetIdx != -1) matchedPresetIdx + 1 else 0
+                if (matchedPresetIdx != -1) matchedPresetIdx else presets.size
             }
         )
     }
@@ -1823,7 +2061,7 @@ fun AddCashbackOverlay(
             if (editingCashback != null) {
                 val pct = editingCashback.percentage
                 if (pct % 1.0 == 0.0) pct.toInt().toString() else pct.toString()
-            } else "5"
+            } else "1" // Default is 1% for "Все покупки"
         )
     }
 
@@ -2028,9 +2266,9 @@ fun AddCashbackOverlay(
                             modifier = Modifier.padding(bottom = 8.dp)
                         )
 
-                        // Visual grid render
+                        // Visual grid render: presets first, "Своя" at the very bottom
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            val itemsToRender = listOf(CategoryPreset("Своя", "edit")) + presets
+                            val itemsToRender = presets + listOf(CategoryPreset("Своя", "edit"))
                             
                             itemsToRender.chunked(3).forEachIndexed { rowIndex, rowItems ->
                                 Row(
@@ -2045,15 +2283,18 @@ fun AddCashbackOverlay(
                                         val emoji = if (item.iconName == "edit") "✍️" else getEmojiForCategory(item.name, item.iconName)
                                         val displayName = when (item.name) {
                                             "Красота и Спа" -> "Красота"
-                                            "Дом и Ремонт" -> "Ремонт"
-                                            "Все покупки" -> "Все трат."
-                                            "Рестораны и Кафе" -> "Кафе"
-                                            "Такси и Транспорт" -> "Такси"
-                                            "Аптеки и Здоровье" -> "Аптеки"
+                                            "Дом и Ремонт", "Дом и ремонт" -> "Дом и ремонт"
+                                            "Все покупки" -> "Все покупки"
+                                            "Рестораны" -> "Рестораны"
+                                            "Автоуслуги" -> "Автоуслуги"
+                                            "Такси", "Такси и Транспорт" -> "Такси"
+                                            "Аптеки", "Аптеки и Здоровье" -> "Аптеки"
                                             "Одежда и Обувь" -> "Одежда"
                                             "Топливо и АЗС" -> "Топливо"
-                                            "Супермаркеты" -> "Продукты"
-                                            "Развлечения" -> "Развлеч."
+                                            "Супермаркеты" -> "Супермаркеты"
+                                            "Развлечения" -> "Развлечения"
+                                            "Авиабилеты" -> "Авиабилеты"
+                                            "Цветы" -> "Цветы"
                                             else -> item.name
                                         }
                                         
@@ -2072,10 +2313,10 @@ fun AddCashbackOverlay(
                                                 )
                                                 .clickable { 
                                                     selectedPresetIndex = index
-                                                    if (index != 0) {
+                                                    if (index < presets.size) {
                                                         customCategoryName = "" // clear custom field
-                                                        val selectedPreset = presets.getOrNull(index - 1)
-                                                        if (selectedPreset?.name == "Все покупки") {
+                                                        val selectedPreset = presets[index]
+                                                        if (selectedPreset.name == "Все покупки") {
                                                             percentageString = "1"
                                                         } else {
                                                             percentageString = "5"
@@ -2084,7 +2325,7 @@ fun AddCashbackOverlay(
                                                         percentageString = "5"
                                                     }
                                                 }
-                                                .padding(vertical = 12.dp, horizontal = 8.dp),
+                                                .padding(vertical = 12.dp, horizontal = 4.dp),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -2092,7 +2333,7 @@ fun AddCashbackOverlay(
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
                                                     text = displayName,
-                                                    fontSize = 11.sp,
+                                                    fontSize = 10.sp,
                                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                                     color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                                                     textAlign = TextAlign.Center,
@@ -2112,8 +2353,8 @@ fun AddCashbackOverlay(
                             }
                         }
 
-                        // If select "✍️ Custom Category", show descriptive clean text input
-                        if (selectedPresetIndex == 0) {
+                        // If select "✍️ Custom Category" (at index presets.size)
+                        if (selectedPresetIndex == presets.size) {
                             Spacer(modifier = Modifier.height(10.dp))
                             OutlinedTextField(
                                 value = customCategoryName,
@@ -2234,8 +2475,8 @@ fun AddCashbackOverlay(
                     Spacer(modifier = Modifier.height(24.dp))
 
                     // Action Controls
-                    val finalCategoryName = if (selectedPresetIndex == 0) customCategoryName else presets[selectedPresetIndex - 1].name
-                    val selectedPreset = if (selectedPresetIndex > 0) presets[selectedPresetIndex - 1] else null
+                    val finalCategoryName = if (selectedPresetIndex == presets.size) customCategoryName else (presets.getOrNull(selectedPresetIndex)?.name ?: "")
+                    val selectedPreset = if (selectedPresetIndex < presets.size) presets.getOrNull(selectedPresetIndex) else null
                     val finalIconName = selectedPreset?.iconName ?: "shopping_bag"
 
                     val isCategoryAlreadyExists = selectedBankIndex in banks.indices && finalCategoryName.trim().isNotEmpty() && cashbacks.any { cb ->
@@ -2294,5 +2535,188 @@ fun AddCashbackOverlay(
             }
         }
     }
+}
+
+@Composable
+fun MccInfoDialog(
+    cashback: CashbackWithBank? = null,
+    categoryName: String? = null,
+    onDismiss: () -> Unit,
+    onEditCashback: ((CashbackWithBank) -> Unit)? = null
+) {
+    val catName = cashback?.category ?: categoryName ?: return
+    val mccDetails = remember(catName) { MccDirectory.getMccForCategory(catName) }
+    val context = LocalContext.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Понятно", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            if (cashback != null && onEditCashback != null) {
+                OutlinedButton(
+                    onClick = {
+                        onDismiss()
+                        onEditCashback(cashback)
+                    },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Изменить %")
+                }
+            }
+        },
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(mccDetails.emoji, fontSize = 24.sp)
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "MCC: ${mccDetails.categoryName}",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (cashback != null) {
+                        Text(
+                            text = "${cashback.bankIconEmoji} ${cashback.bankName} • ${cashback.percentage}% кешбэк",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    text = mccDetails.summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "СПИСОК КОДОВ:",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            letterSpacing = 0.5.sp
+                        )
+                    )
+
+                    // Quick copy all codes
+                    TextButton(
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                        onClick = {
+                            val codesString = mccDetails.codes.joinToString(", ") { it.code }
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            val clip = android.content.ClipData.newPlainText("MCC Codes", codesString)
+                            clipboard.setPrimaryClip(clip)
+                            Toast.makeText(context, "Коды скопированы: $codesString", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Text("📋 Копировать все", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    mccDetails.codes.forEach { item ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.primaryContainer
+                                    ) {
+                                        Text(
+                                            text = item.code,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    Text(
+                                        text = item.name,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+
+                                if (item.examples.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Примеры: ${item.examples}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                                        lineHeight = 14.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Helpful tip
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(8.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text("💡", fontSize = 14.sp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Уточнить MCC перед покупкой можно в чеке или деталях операции мобильного банка.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            lineHeight = 14.sp
+                        )
+                    }
+                }
+            }
+        },
+        shape = RoundedCornerShape(24.dp)
+    )
 }
 

@@ -36,24 +36,24 @@ class CashbackViewModel(application: Application) : AndroidViewModel(application
 
     // Category lists helper with corresponding icons
     val presetCategories = listOf(
+        CategoryPreset("Все покупки", "percent"),
         CategoryPreset("Супермаркеты", "shopping_cart"),
-        CategoryPreset("Рестораны и Кафе", "restaurant"),
-        CategoryPreset("Такси и Транспорт", "local_taxi"),
-        CategoryPreset("Аптеки и Здоровье", "local_pharmacy"),
+        CategoryPreset("Рестораны", "restaurant"),
+        CategoryPreset("Автоуслуги", "directions_car"),
+        CategoryPreset("Такси", "local_taxi"),
+        CategoryPreset("Аптеки", "local_pharmacy"),
         CategoryPreset("Одежда и Обувь", "checkroom"),
         CategoryPreset("Электроника", "devices"),
         CategoryPreset("Топливо и АЗС", "local_gas_station"),
         CategoryPreset("Развлечения", "theater_comedy"),
         CategoryPreset("Кино и искусство", "movie"),
         CategoryPreset("Красота и Спа", "spa"),
-        CategoryPreset("Дом и Ремонт", "construction"),
+        CategoryPreset("Дом и ремонт", "construction"),
         CategoryPreset("Книги и хобби", "menu_book"),
         CategoryPreset("Спорттовары", "sports_soccer"),
         CategoryPreset("Зоотовары", "pets"),
-        CategoryPreset("Цветы и подарки", "redeem"),
-        CategoryPreset("Путешествия", "flight"),
-        CategoryPreset("Игры и софт", "videogame_asset"),
-        CategoryPreset("Все покупки", "percent")
+        CategoryPreset("Цветы", "redeem"),
+        CategoryPreset("Авиабилеты", "flight")
     )
 
     fun addBank(name: String, colorHex: String, iconEmoji: String) {
